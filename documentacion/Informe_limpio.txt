@@ -1,0 +1,84 @@
+Taller de Ingeniería Informática — FDICI12
+
+UNIVERSIDAD DE LOS LAGOS
+Departamento de Ciencias de la Ingeniería
+Ingeniería Civil en Informática
+
+INFORME LABORATORIO PRÁCTICO 2
+Contenerización y Orquestación con Amazon ECS / Fargate
+
+Integrantes: Camilo Velásquez Soto — Samuel Delgado
+Profesor: Francisco Alarcón
+Fecha: 12 de junio de 2026
+
+---
+
+1. Descripción del Proyecto
+
+Murano Voley Connect es una academia deportiva de voleibol ubicada en Puerto Montt, Chile. Para este laboratorio se tomó esta organización como caso base y se desarrolló un sitio web estático servido mediante contenedores Docker, desplegado sobre Amazon ECS con Fargate como tipo de lanzamiento.
+
+2. Arquitectura de la Solución
+
+La arquitectura desplegada en AWS consiste en los siguientes componentes:
+
+- VPC (vpc-0d422bb15ed40e678): Red virtual aislada.
+- Subredes Públicas: Desplegadas en dos zonas de disponibilidad (us-east-1a y us-east-1b).
+- Application Load Balancer (ALB): Punto de entrada HTTP que distribuye el tráfico hacia las tareas de ECS.
+- Amazon ECS Cluster (murano-cluster): Orquestador con launch type FARGATE.
+- AWS Fargate: Ejecución de contenedores sin gestión de instancias EC2.
+- Amazon ECR: Registro privado con la imagen Docker murano-voley-connect:1.0.
+- Security Group: Regla de entrada HTTP/80 desde 0.0.0.0/0.
+
+[ INSERTAR CAPTURA: DIAGRAMA DE ARQUITECTURA AWS ]
+
+3. Implementación Técnica
+
+3.1 Contenerización (Dockerfile)
+
+Se construyó la imagen sobre Nginx Alpine, una base mínima y oficial:
+
+FROM public.ecr.aws/nginx/nginx:1.27-alpine
+COPY index.html /usr/share/nginx/html/index.html
+EXPOSE 80
+
+3.2 Definición de Tarea (Task Definition)
+
+Modo de red awsvpc con recursos mínimos válidos para Fargate (256 vCPU / 512 MB):
+
+{
+  "family": "murano-task",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "containerDefinitions": [{
+    "name": "murano-web",
+    "image": "[ACCOUNT_ID].dkr.ecr.us-east-1.amazonaws.com/murano-voley-connect:1.0",
+    "portMappings": [{ "containerPort": 80 }]
+  }]
+}
+
+4. Escalado y Alta Disponibilidad
+
+El servicio se desplegó inicialmente con desired-count 2 y luego se escaló a 4 tareas mediante AWS CLI:
+
+aws ecs update-service --cluster murano-cluster --service murano-svc --desired-count 4
+
+El orquestador registra automáticamente las nuevas IPs en el Target Group del balanceador.
+
+[ INSERTAR CAPTURA: EVIDENCIA DE 4 TAREAS RUNNING EN ECS ]
+
+5. Evidencia de Funcionamiento
+
+URL de acceso: http://murano-alb-850757385.us-east-1.elb.amazonaws.com
+
+[ INSERTAR CAPTURA: SITIO WEB CARGANDO DESDE EL DNS DEL ALB ]
+
+[ INSERTAR CAPTURA: TARGET GROUP CON TARGETS SALUDABLES (HEALTHY) ]
+
+6. Conclusión y Gestión de Costos
+
+El laboratorio permitió implementar un flujo completo de contenerización y orquestación: construcción de imagen Docker, publicación en ECR, definición de tarea ECS y despliegue en Fargate con balanceador de carga Multi-AZ.
+
+En cuanto a costos, Fargate cobra por tiempo de ejecución (vCPU y memoria por segundo), lo que resulta adecuado para cargas puntuales. Una vez finalizada la evaluación se eliminaron todos los recursos para evitar costos adicionales.
+
+[ INSERTAR CAPTURA: EVIDENCIA DE LIMPIEZA DE RECURSOS (DELETE) ]
